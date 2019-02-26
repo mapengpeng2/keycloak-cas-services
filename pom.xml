@@ -99,6 +99,13 @@
 			<artifactId>undertow-servlet</artifactId>
 			<scope>test</scope>
 		</dependency>
+ 		<dependency>
+            		<groupId>org.jasig.cas.client</groupId>
+            		<artifactId>cas-client-integration-jboss</artifactId>
+            		<version>3.5.1</version>
+            		<!--<scope>system</scope>-->
+            		<!--<systemPath>${project.basedir}/lib/cas-client-integration-jboss-3.5.2-SNAPSHOT.jar</systemPath>-->
+        	</dependency>
 	</dependencies>
 
 	<build>
