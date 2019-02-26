@@ -1,27 +1,9 @@
 package io.github.johnjcool.keycloak.broker.cas;
 
-import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.PROVIDER_PARAMETER_STATE;
-import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.PROVIDER_PARAMETER_TICKET;
-import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.createAuthenticationUrl;
-import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.createLogoutUrl;
-import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.createValidateServiceUrl;
-import io.github.johnjcool.keycloak.broker.cas.model.ServiceResponse;
-import io.github.johnjcool.keycloak.broker.cas.model.Success;
-
-import java.net.URI;
-
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.core.UriInfo;
-
+import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.*;
+import org.jasig.cas.client.authentication.AttributePrincipal;
+import org.jasig.cas.client.util.AssertionHolder;
+import org.jasig.cas.client.validation.Assertion;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
@@ -40,6 +22,15 @@ import org.keycloak.models.UserSessionModel;
 import org.keycloak.services.ErrorPage;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.messages.Messages;
+
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.*;
+import javax.ws.rs.core.Response.Status;
+import java.net.URI;
 
 public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityProviderConfig> {
 
@@ -78,7 +69,8 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 	}
 
 	@Override
-	public Object callback(final RealmModel realm, final org.keycloak.broker.provider.IdentityProvider.AuthenticationCallback callback, final EventBuilder event) {
+	public Object callback(final RealmModel realm, final org.keycloak.broker.provider.IdentityProvider.AuthenticationCallback callback,
+			final EventBuilder event) {
 		return new Endpoint(callback, realm, event);
 	}
 
@@ -108,8 +100,8 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 		@GET
 		public Response authResponse(@QueryParam(PROVIDER_PARAMETER_TICKET) final String ticket, @QueryParam(PROVIDER_PARAMETER_STATE) final String state) {
 			try {
-				CasIdentityProviderConfig config = getConfig();
-				BrokeredIdentityContext federatedIdentity = getFederatedIdentity(client, config, ticket, uriInfo, state);
+				CasIdentityProviderConfig config = CasIdentityProvider.this.getConfig();
+				BrokeredIdentityContext federatedIdentity = getFederatedIdentity(CasIdentityProvider.this.client, config, ticket, uriInfo, state);
 
 				return callback.authenticated(federatedIdentity);
 			} catch (Exception e) {
@@ -145,26 +137,42 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 				final UriInfo uriInfo, final String state) {
 			Response response = null;
 			try {
+				logger.info("loginUrl: 【" + config.getCasServerLoginUrl() + "】 loginOutUrl: 【" + config.getCasServerLogoutUrl() + "】 validateUrl: 【" + config.getCasServiceValidateUrl() + "】 prefix: 【" + config.getCasServerUrlPrefix() + "】 ticket---> 【" + ticket + "】 state ---> 【" + state + "】 uriInfo ---> " + uriInfo.getAbsolutePath());
 				WebTarget target = client.target(createValidateServiceUrl(config, ticket, uriInfo, state));
-				response = target.request(MediaType.APPLICATION_XML_TYPE).get();
+				response = target.request(MediaType.TEXT_HTML).get();
 				if (response.getStatus() != 200) {
 					throw new Exception("Failed : HTTP error code : " + response.getStatus());
 				}
+//				InputStream in = (InputStream) response.getEntity();
+//				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+//				byte[] buffer = new byte[1024];
+//				int len = 0;
+//				while ((len = in.read(buffer)) != -1) {
+//					baos.write(buffer, 0, len);
+//				}
+//				in.close();
+//				String entitys = baos.toString();
+//				baos.close();
+//
+//				logger.info("reslut:>>>>>>>>>>>" + entitys);
 
-				response.bufferEntity();
-				if (LOGGER_DUMP_USER_PROFILE.isDebugEnabled()) {
-					LOGGER_DUMP_USER_PROFILE.debug("User Profile XML Data for provider " + config.getAlias() + ": " + response.readEntity(String.class));
+				String userName = null;
+				Assertion assertion = AssertionHolder.getAssertion();
+				if (null != assertion) {
+					AttributePrincipal attributePrincipal = assertion.getPrincipal();
+					if (null != attributePrincipal) {
+						userName = attributePrincipal.getName();
+					} else {
+						logger.info("attributePrincipal is null ");
+					}
+				} else {
+					logger.info("assertion is null ");
 				}
-
-				ServiceResponse serviceResponse = response.readEntity(ServiceResponse.class);
-				if (serviceResponse.getFailure() != null) {
-					throw new Exception(serviceResponse.getFailure().getCode() + "(" + serviceResponse.getFailure().getDescription()
-							+ ") for authentication by External IdP " + config.getProviderId());
-				}
-				Success success = serviceResponse.getSuccess();
-				BrokeredIdentityContext user = new BrokeredIdentityContext(success.getUser());
-				user.setUsername(success.getUser());
-				user.getContextData().put(USER_ATTRIBUTES, success.getAttributes());
+//				String userName = "admin"; ClassNoDefException
+				logger.info("user:>>>>>>>>>>>" + userName);
+				BrokeredIdentityContext user = new BrokeredIdentityContext(userName);
+				user.setUsername(userName);
+				//user.getContextData().put(USER_ATTRIBUTES, success.getAttributes());
 				user.setIdpConfig(config);
 				user.setIdp(CasIdentityProvider.this);
 				user.setCode(state);
