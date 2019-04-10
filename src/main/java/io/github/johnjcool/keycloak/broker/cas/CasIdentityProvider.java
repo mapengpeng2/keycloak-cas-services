@@ -1,9 +1,6 @@
 package io.github.johnjcool.keycloak.broker.cas;
 
 import static io.github.johnjcool.keycloak.broker.cas.util.UrlHelper.*;
-import org.jasig.cas.client.authentication.AttributePrincipal;
-import org.jasig.cas.client.util.AssertionHolder;
-import org.jasig.cas.client.validation.Assertion;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
@@ -22,6 +19,12 @@ import org.keycloak.models.UserSessionModel;
 import org.keycloak.services.ErrorPage;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.messages.Messages;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -30,6 +33,13 @@ import javax.ws.rs.client.Client;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.*;
 import javax.ws.rs.core.Response.Status;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringReader;
 import java.net.URI;
 
 public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityProviderConfig> {
@@ -58,7 +68,7 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 
 	@Override
 	public Response keycloakInitiatedBrowserLogout(final KeycloakSession session, final UserSessionModel userSession, final UriInfo uriInfo,
-			final RealmModel realm) {
+												   final RealmModel realm) {
 		URI logoutUrl = createLogoutUrl(getConfig(), userSession, realm, uriInfo).build();
 		return Response.status(302).location(logoutUrl).build();
 	}
@@ -70,7 +80,7 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 
 	@Override
 	public Object callback(final RealmModel realm, final org.keycloak.broker.provider.IdentityProvider.AuthenticationCallback callback,
-			final EventBuilder event) {
+						   final EventBuilder event) {
 		return new Endpoint(callback, realm, event);
 	}
 
@@ -134,7 +144,7 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 		}
 
 		private BrokeredIdentityContext getFederatedIdentity(final Client client, final CasIdentityProviderConfig config, final String ticket,
-				final UriInfo uriInfo, final String state) {
+															 final UriInfo uriInfo, final String state) {
 			Response response = null;
 			try {
 				logger.info("loginUrl: 【" + config.getCasServerLoginUrl() + "】 loginOutUrl: 【" + config.getCasServerLogoutUrl() + "】 validateUrl: 【" + config.getCasServiceValidateUrl() + "】 prefix: 【" + config.getCasServerUrlPrefix() + "】 ticket---> 【" + ticket + "】 state ---> 【" + state + "】 uriInfo ---> " + uriInfo.getAbsolutePath());
@@ -143,32 +153,44 @@ public class CasIdentityProvider extends AbstractIdentityProvider<CasIdentityPro
 				if (response.getStatus() != 200) {
 					throw new Exception("Failed : HTTP error code : " + response.getStatus());
 				}
-//				InputStream in = (InputStream) response.getEntity();
-//				ByteArrayOutputStream baos = new ByteArrayOutputStream();
-//				byte[] buffer = new byte[1024];
-//				int len = 0;
-//				while ((len = in.read(buffer)) != -1) {
-//					baos.write(buffer, 0, len);
-//				}
-//				in.close();
-//				String entitys = baos.toString();
-//				baos.close();
-//
-//				logger.info("reslut:>>>>>>>>>>>" + entitys);
-
-				String userName = null;
-				Assertion assertion = AssertionHolder.getAssertion();
-				if (null != assertion) {
-					AttributePrincipal attributePrincipal = assertion.getPrincipal();
-					if (null != attributePrincipal) {
-						userName = attributePrincipal.getName();
-					} else {
-						logger.info("attributePrincipal is null ");
-					}
-				} else {
-					logger.info("assertion is null ");
+				InputStream in = (InputStream) response.getEntity();
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				byte[] buffer = new byte[1024];
+				int len = 0;
+				while ((len = in.read(buffer)) != -1) {
+					baos.write(buffer, 0, len);
 				}
-//				String userName = "admin"; ClassNoDefException
+				in.close();
+				String entitys = baos.toString();
+				baos.close();
+
+				logger.info("reslut: >>>>>>>>>>> " + entitys);
+
+				String userName = "";
+				DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+				try {
+					DocumentBuilder builder = factory.newDocumentBuilder();
+					StringReader sr = new StringReader(entitys);
+					InputSource is = new InputSource(sr);
+					Document doc = builder.parse(is);
+					Element rootElement = doc.getDocumentElement();
+					NodeList nodeList = rootElement.getChildNodes();
+					for (int i = 0; i < nodeList.getLength(); i++) {
+						Node node = nodeList.item(i);
+						if ("cas:authenticationSuccess".equalsIgnoreCase(node.getNodeName())) {
+							userName = node.getChildNodes().item(1).getTextContent();
+						}
+					}
+				} catch (ParserConfigurationException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (SAXException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 				logger.info("user:>>>>>>>>>>>" + userName);
 				BrokeredIdentityContext user = new BrokeredIdentityContext(userName);
 				user.setUsername(userName);

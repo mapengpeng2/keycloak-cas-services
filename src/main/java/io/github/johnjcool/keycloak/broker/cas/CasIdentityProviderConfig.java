@@ -8,7 +8,7 @@ public class CasIdentityProviderConfig extends IdentityProviderModel {
 
 	private static final String DEFAULT_CAS_LOGIN_SUFFFIX = "login";
 	private static final String DEFAULT_CAS_LOGOUT_SUFFFIX = "logout";
-	private static final String DEFAULT_CAS_SERVICE_VALIDATE_SUFFFIX = "service";
+	private static final String DEFAULT_CAS_SERVICE_VALIDATE_SUFFFIX = "serviceValidate";
 
 	public CasIdentityProviderConfig(final IdentityProviderModel model) {
 		super(model);
@@ -27,7 +27,7 @@ public class CasIdentityProviderConfig extends IdentityProviderModel {
 	}
 
 	public String getCasServiceValidateUrl() {
-		return String.format("%s?%s", getConfig().get("casServerUrlPrefix"), DEFAULT_CAS_SERVICE_VALIDATE_SUFFFIX);
+		return String.format("%s/%s", getConfig().get("casServerUrlPrefix"), DEFAULT_CAS_SERVICE_VALIDATE_SUFFFIX);
 	}
 
 	public boolean isGateway() {
